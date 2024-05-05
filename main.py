@@ -1,52 +1,29 @@
-import cv2
-import cvzone
-import math
-from ultralytics import YOLO
+import pickle
+import numpy as np
+from sklearn.preprocessing import StandardScaler
 
-path = "C:/Users/rrsan/Documents/My Docs/College/Projects/StaircaseFall-detection/data/Baby falls down stairs!.mp4"
-cap = cv2.VideoCapture(path)
+from utils.dataGenerator import extract_keypoints
 
-model = YOLO('yolov8s.pt')
+image_path = r"C:\Users\rrsan\Documents\My Docs\College\Projects\StaircaseFall-detection\data\Images\fall\1.jpg"
 
-classnames = []
-with open('classes.txt', 'r') as f:
-    classnames = f.read().splitlines()
+# Load the model
+with open('models/model.pkl', 'rb') as file:
+    model = pickle.load(file)
 
-while True:
-    ret, frame = cap.read()
-    frame = cv2.resize(frame, (980, 740))
+keypoints = extract_keypoints(image_path)
+row = []
+if keypoints:
+    for kp in keypoints:
+        row.extend(kp)
 
-    results = model(frame)
+print(row)
 
-    for info in results:
-        parameters = info.boxes
-        for box in parameters:
-            x1, y1, x2, y2 = box.xyxy[0]
-            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-            confidence = box.conf[0]
-            class_detect = box.cls[0]
-            class_detect = int(class_detect)
-            class_detect = classnames[class_detect]
-            conf = math.ceil(confidence * 100)
+row_array = np.array(row)
+row = row_array.reshape(1, -1)
 
-            # implement fall detection using the coordinates x1,y1,x2
-            height = y2 - y1
-            width = x2 - x1
-            threshold = height - width
+scaler = StandardScaler()
+row_scaled = scaler.fit_transform(row)
 
-            if conf > 80 and class_detect == 'person':
-                cvzone.cornerRect(frame, [x1, y1, width, height], l=30, rt=6)
-                cvzone.putTextRect(frame, f'{class_detect}', [x1 + 8, y1 - 12], thickness=2, scale=2)
+pred = model.predict(row_scaled)
+print(pred)
 
-            if threshold < 0 and class_detect == 'person':
-                cvzone.putTextRect(frame, 'Fall Detected', [height, width], thickness=2, scale=2)
-
-            else:
-                pass
-
-    cv2.imshow('frame', frame)
-    if cv2.waitKey(1) & 0xFF == ord('t'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
