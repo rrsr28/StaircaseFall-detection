@@ -76,9 +76,9 @@ class SVMModelc:
         self.best_svm = pickle.load(open(model_filename, 'rb'))
 
 
-data = pd.read_csv(r"C:\Users\rrsan\Documents\My Docs\College\Projects\StaircaseFall-detection\data\keypoints_data.csv")
+data = pd.read_csv(r"C:\Users\deek\Documents\My Docs\College\Projects\StaircaseFall-detection\data\keypoints_data.csv")
 
-svm0 = SVMModelc(r'C:\Users\rrsan\Documents\My Docs\College\Projects\StaircaseFall-detection\data\keypoints_data.csv')
+svm0 = SVMModelc(r'C:\Users\deek\Documents\My Docs\College\Projects\StaircaseFall-detection\data\keypoints_data.csv')
 # svm0.save_model('model2.pkl')
 
 with open('model2.pkl', 'rb') as f:
