@@ -1,121 +1,119 @@
 import cv2
-import pickle
-import numpy as np
-import mediapipe as mp
-from sklearn.preprocessing import StandardScaler
-import cvzone
 import math
 import torch
-from ultralytics import YOLO
+import numpy as np
+from tqdm import tqdm
 from PIL import Image
+from utils.poser import get_pose, get_pose_model
+from utils.video_out import prepare_vid_out
 from transformers import OwlViTProcessor, OwlViTForObjectDetection
 
-# Load MediaPipe pose estimation model
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(static_image_mode=True, min_detection_confidence=0.5)
+import warnings
+warnings.filterwarnings("ignore", message="torch.meshgrid: in an upcoming release")
 
-# Load OwlViT model for object detection
 processor = OwlViTProcessor.from_pretrained("google/owlvit-base-patch32")
-model_vit = OwlViTForObjectDetection.from_pretrained("google/owlvit-base-patch32")
+model = OwlViTForObjectDetection.from_pretrained("google/owlvit-base-patch32")
 
-# Define the body parts in the order provided by MediaPipe
-body_parts = ['nose', 'left_eye_inner', 'left_eye', 'left_eye_outer', 'right_eye_inner', 'right_eye', 'right_eye_outer',
-              'left_ear', 'right_ear', 'mouth_left', 'mouth_right', 'left_shoulder', 'right_shoulder', 'left_elbow',
-              'right_elbow', 'left_wrist', 'right_wrist', 'left_pinky', 'right_pinky', 'left_index', 'right_index',
-              'left_thumb', 'right_thumb', 'left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle',
-              'right_ankle', 'left_heel', 'right_heel', 'left_foot_index', 'right_foot_index']
+falls_boxs = []
 
-# Function to extract keypoints using MediaPipe
-def extract_keypoints(image):
-    results = pose.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    if results.pose_landmarks:
-        keypoints = [None] * len(body_parts)  # Initialize list for all body parts
-        for i, landmark in enumerate(results.pose_landmarks.landmark):
-            keypoints[i] = (landmark.x, landmark.y, landmark.z)  # Store (x, y, z) coordinates
-        return keypoints
-    else:
-        return None
+def detect_objects(image):
+    # Convert PIL image to OpenCV format (BGR)
+    image_cv2 = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-# Load the model for keypoints extraction
-with open('models/model2.pkl', 'rb') as file:
-    model = pickle.load(file)
+    # Get image size
+    height, width, _ = image_cv2.shape
 
-# Load YOLO object detection model
-model_yolo = YOLO('yolov8s.pt')
+    # Detect objects in the image
+    texts = [["stairs", "ladder", "escalator", "steps"]]
+    inputs = processor(text=texts, images=image, return_tensors="pt")
+    outputs = model(**inputs)
 
-classnames = []
-with open('classes.txt', 'r') as f:
-    classnames = f.read().splitlines()
+    # Target image sizes (height, width) to rescale box predictions [batch_size, 2]
+    target_sizes = torch.Tensor([[height, width]])
 
-# Video capture
-cap = cv2.VideoCapture('data/Ben Fall.mp4')
-
-# Create a resizable window
-cv2.namedWindow('frame', cv2.WINDOW_NORMAL)
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    # Object detection with OwlViT
-    image_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    texts = [["falling down stairs", "falling", "human who fell", "human falling down", "stairs", "ladder", "escalator", "steps"]]
-    inputs = processor(text=texts, images=image_pil, return_tensors="pt")
-    outputs = model_vit(**inputs)
-    target_sizes = torch.Tensor([image_pil.size[::-1]])
+    # Convert outputs (bounding boxes and class logits) to Pascal VOC format (xmin, ymin, xmax, ymax)
     results = processor.post_process_object_detection(outputs=outputs, target_sizes=target_sizes, threshold=0.1)
-    text = texts[0]
-    boxes, scores, labels = results[0]["boxes"], results[0]["scores"], results[0]["labels"]
+    i = 0  # Retrieve predictions for the first image for the corresponding text queries
+    text = texts[i]
+    boxes, scores, labels = results[i]["boxes"], results[i]["scores"], results[i]["labels"]
 
-    # Draw rectangles for OwlViT object detection
+    # Draw bounding boxes on the image
     for box, score, label in zip(boxes, scores, labels):
         box = [int(i) for i in box.tolist()]
         print(f"Detected {text[label]} with confidence {round(score.item(), 3)} at location {box}")
-        cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 2)
-        cv2.putText(frame, f"{text[label]}: {score:.2f}", (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                    (0, 255, 0), 2)
+        cv2.rectangle(image_cv2, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 2)
+        cv2.putText(image_cv2, f"{text[label]}: {score:.2f}", (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-    # YOLO object detection
-    results_yolo = model_yolo(frame)
+    return image_cv2
 
-    for info in results_yolo[0]:
-        parameters = info.boxes
-        for box in parameters:
-            x1, y1, x2, y2 = box.xyxy[0]
-            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-            confidence = box.conf[0]
-            class_detect = box.cls[0]
-            class_detect = int(class_detect)
-            class_detect = classnames[class_detect]
-            conf = math.ceil(confidence * 100)
 
-            # Perform fall detection using model2 predictions
-            keypoints = extract_keypoints(frame)
-            if keypoints:
-                row = []
-                for kp in keypoints:
-                    row.extend(kp)
-                row = np.array(row).reshape(1, -1)
-                row_scaled = StandardScaler().fit_transform(row)
-                pred = model.predict(row_scaled)
+def fall_detection(poses, image):
+    is_fall = False
+    bbox = None
 
-            # implement fall detection using the coordinates x1,y1,x2
-            height = y2 - y1
-            width = x2 - x1
-            threshold = height - width
+    for pose in poses:
+        xmin, ymin = (pose[2] - pose[4] / 2), (pose[3] - pose[5] / 2)
+        xmax, ymax = (pose[2] + pose[4] / 2), (pose[3] + pose[5] / 2)
 
-            if conf > 80 and class_detect == 'person':
-                cvzone.cornerRect(frame, [x1, y1, width, height], l=30, rt=6)
-                cvzone.putTextRect(frame, f'{class_detect}', [x1 + 8, y1 - 12], thickness=2, scale=2)
+        left_shoulder_y = pose[23]
+        left_shoulder_x = pose[22]
+        right_shoulder_y = pose[26]
+        left_body_y = pose[41]
+        left_body_x = pose[40]
+        right_body_y = pose[44]
 
-            if threshold < 10 and class_detect == 'person':
-                cvzone.putTextRect(frame, 'Fall Detected', [height, width], thickness=2, scale=2)
+        len_factor = math.sqrt(((left_shoulder_y - left_body_y) ** 2 + (left_shoulder_x - left_body_x) ** 2))
+        left_foot_y = pose[53]
+        right_foot_y = pose[56]
+        dx = int(xmax) - int(xmin)
+        dy = int(ymax) - int(ymin)
+        difference = dy - dx
 
-    # Show frame
-    cv2.imshow('frame', frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        if left_shoulder_y > left_foot_y - len_factor and left_body_y > left_foot_y - (len_factor / 2) and left_shoulder_y > left_body_y - (len_factor / 2) or (right_shoulder_y > right_foot_y - len_factor and right_body_y > right_foot_y - (len_factor / 2) and right_shoulder_y > right_body_y - (len_factor / 2)) or difference < 0:
+            is_fall = True
+            bbox = (xmin, ymin, xmax, ymax)
+            falls_boxs.append((xmin, ymin, xmax, ymax))
+            break
 
-cap.release()
-cv2.destroyAllWindows()
+    return is_fall, bbox
+
+def process_video(video_path):
+    vid_cap = cv2.VideoCapture(video_path)
+
+    if not vid_cap.isOpened():
+        print('Error while trying to read video. Please check path again')
+        return
+
+    model, device = get_pose_model()
+    vid_out = prepare_vid_out(video_path, vid_cap)
+
+    success, frame = vid_cap.read()
+    _frames = []
+    while success:
+        _frames.append(frame)
+        success, frame = vid_cap.read()
+
+    for image in tqdm(_frames):
+        image, output = get_pose(image, model, device)
+        # detected_objects_image = detect_objects(image)
+
+        _image = image[0].permute(1, 2, 0) * 255
+        _image = _image.cpu().numpy().astype(np.uint8)
+        _image = cv2.cvtColor(_image, cv2.COLOR_RGB2BGR)
+
+        is_fall, bbox = fall_detection(output, image)
+
+        if is_fall:
+            x_min, y_min, x_max, y_max = bbox
+            cv2.rectangle(_image, (int(x_min), int(y_min)), (int(x_max), int(y_max)), color=(0, 0, 255),
+                          thickness=5, lineType=cv2.LINE_AA)
+            cv2.putText(_image, 'Person Fell down', (11, 100), 0, 1, [0, 0, 2550], thickness=3, lineType=cv2.LINE_AA)
+
+        vid_out.write(_image)
+
+    vid_out.release()
+    vid_cap.release()
+
+
+videos_path = 'data/Laddr Fall.mp4'
+process_video(videos_path)
