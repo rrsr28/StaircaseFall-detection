@@ -1,7 +1,5 @@
 # StaircaseFall-detection
 
-
-
 ## Overview
 This fall detection system is designed to analyze video streams in real-time and identify instances of falls. It integrates pose estimation and object detection techniques to detect human poses and fall-related objects, allowing for accurate fall detection even in complex environments.
 
