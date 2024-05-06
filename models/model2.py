@@ -79,7 +79,7 @@ class SVMModelc:
 data = pd.read_csv(r"C:\Users\rrsan\Documents\My Docs\College\Projects\StaircaseFall-detection\data\keypoints_data.csv")
 
 svm0 = SVMModelc(r'C:\Users\rrsan\Documents\My Docs\College\Projects\StaircaseFall-detection\data\keypoints_data.csv')
-svm0.save_model('model2.pkl')
+# svm0.save_model('model2.pkl')
 
 with open('model2.pkl', 'rb') as f:
     svm = pickle.load(f)
