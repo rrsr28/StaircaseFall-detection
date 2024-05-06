@@ -45,7 +45,7 @@ This fall detection system is designed to analyze video streams in real-time and
 
 ## Gallery
 ![img.png](img.png)
-![Screenshot 2024-05-06 1404064545.png](..%2F..%2F..%2F..%2F..%2FPictures%2FScreenshots%2FScreenshot%202024-05-06%201404064545.png)
-![Screenshot 2024-05-06 135413.png](..%2F..%2F..%2F..%2F..%2FPictures%2FScreenshots%2FScreenshot%202024-05-06%20135413.png)
-![Screenshot 2024-05-06 140058.png](..%2F..%2F..%2F..%2F..%2FPictures%2FScreenshots%2FScreenshot%202024-05-06%20140058.png)
+![Screenshot 2024-05-06 1404064545.png](Screenshot 2024-05-06 1404064545.png)
+![Screenshot 2024-05-06 135413.png](Screenshot 2024-05-06 135413.png)
+![Screenshot 2024-05-06 140058.png](Screenshot 2024-05-06 140058.png)
 ---
