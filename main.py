@@ -1,4 +1,5 @@
 import cv2
+import csv
 import math
 import torch
 import numpy as np
@@ -14,9 +15,16 @@ warnings.filterwarnings("ignore", message="torch.meshgrid: in an upcoming releas
 processor = OwlViTProcessor.from_pretrained("google/owlvit-base-patch32")
 model = OwlViTForObjectDetection.from_pretrained("google/owlvit-base-patch32")
 
-falls_boxs = []
+
+def save_to_csv(falls_boxs, file_path):
+    with open(file_path, 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['xmin', 'ymin', 'xmax', 'ymax'])  # Write header
+        writer.writerows(falls_boxs)
+
 
 def detect_objects(image):
+
     # Convert PIL image to OpenCV format (BGR)
     image_cv2 = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
@@ -48,6 +56,7 @@ def detect_objects(image):
 
 
 def fall_detection(poses, image):
+    global falls_boxs
     is_fall = False
     bbox = None
 
@@ -114,6 +123,9 @@ def process_video(video_path):
     vid_out.release()
     vid_cap.release()
 
-
-videos_path = 'data/Laddr Fall.mp4'
+falls_boxs = []
+videos_path = 'data/fall.mp4'
+video_name = videos_path.split('/')[-1].split('.')[0]  # Extracting the video name without extension
 process_video(videos_path)
+save_to_csv(falls_boxs, f'falls_boxs_{video_name}.csv')  # Using f-string to insert the video name into the CSV file name
+
